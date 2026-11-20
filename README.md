@@ -1,3 +1,3 @@
 # VortexChatLib
-Chat library for Vortex executors
-Ill add the main source file either in a few hours or tomorrow
+Chat library for Vortex executors  
+This was pretty rushed / poorly made, im gonna make a better version and provide more information within a few days
