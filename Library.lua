@@ -11,14 +11,13 @@ local Info = {
 }
 
 local NetworkLib = network or Network -- hmu if your executor uses a different networking library
+setclipboard = setclipboard or SetClipBoard or toclipboard or (Clipboard and Clipboard.Set) or (clipboard and clipboard.set) or function(...) --[[ Do nothing! ]] end
 
 local function ConstructDebug(DebugID: string, DebugContent: table)
     if DebugID and DebugContent and typeof(DebugID) == "string" and typeof(DebugContent) == "table" then
         local Debug = {
             ["DebugID"] = DebugID,
-            ["DebugContent"] = {
-                table.unpack(DebugContent) -- lol
-            }
+            ["DebugContent"] = DebugContent
         }
 
         return Debug
@@ -74,18 +73,6 @@ local function ConstructError(ErrorReason: string, ErrorMessage: string, Debug: 
     }
 
     return ConstructDebug(DebugID, DebugInfo) 
-end
-
-if G().ChatLibrary ~= nil and typeof(G().ChatLibrary) == "table" then
-    local ErrorReason = "CHAT_LIBRARY_ALREADY_LOADED"
-    local ErrorMessage = "Chat library is already loaded! If it's not the intended chat library, you can remove the table pointer (make it nil) at getgenv().ChatLibrary and re-execute."
-    local DebugID = "ChatLibraryAlreadyLoaded"
-    local DebugInfo = {
-        ["IdentifiedLibrary"] = G().ChatLibrary
-    }
-    local Debug = ConstructDebug(DebugID, DebugInfo)
-
-    return ConstructError(ErrorReason, ErrorMessage, Debug)
 end
 
 -- Internal functions, im pretty sure GetCharMap can be replaced with a simple string.byte but whatever, this works
@@ -240,16 +227,52 @@ local function LSendChatPacket(Message: string)
 	Message = tostring(Message)
 	if NetworkLib then
 		-- Astra
-		local ChatPacket = NetworkLib.create("Chat", {
-			username = owner.Name,
-			text = Message,
-		})
-		NetworkLib.send(ChatPacket)
-		return ConstructResponse("ChatMessageSent", "Chat message successfully passed to NetworkLib.send! Expect a chat message to appear.")
+		if typeof(NetworkLib.create) == "function" and typeof(NetworkLib.send) == "function" then
+			local ChatPacket;
+			local ChatSuccess, ChatFail = pcall(function() 
+				ChatPacket = NetworkLib.create("Chat", {
+				username = game.Players.LocalPlayer.Name,
+				text = Message,
+			}) 
+			end)
+			
+			local NetSuccess, NetFail = pcall(function()
+				NetworkLib.send(ChatPacket)
+			end)
+			
+			if ChatSuccess and NetSuccess then
+				return ConstructResponse("ChatMessageSent", "Chat message successfully passed to NetworkLib.send! Expect a chat message to appear.")
+			else
+				local ErrorReason = "PCALL_FAILED"
+				local ErrorMessage = `pcall failed: ChatPacket: {(ChatFail or "nil")} | SendFunction: {(NetFail or "nil")}`
+				local DebugID = "SendChatPacket"
+				local DebugInfo = {
+					["ChatSuccess"] = ChatSuccess,
+					["NetSuccess"] = NetSuccess,
+					["ChatFailMessage"] = (ChatFail or "nil"),
+					["NetFailMessage"] = (NetFail or "nil")
+				}
+				local Debug = ConstructDebug(DebugID, DebugInfo)
+
+				return ConstructError(ErrorReason, ErrorMessage, Debug)
+			end
+		else
+			local ErrorReason = "INSUFFICIENT_NET_LIBRARY"
+        	local ErrorMessage = "Library doesn't have either send or create, both are essential for ChatLibrary's function."
+        	local DebugID = "SendChatPacket"
+        	local DebugInfo = {
+            	["NetworkLib"] = NetworkLib,
+            	["Message"] = Message
+            	-- tbh not able to add much because there's no debug library like in roblox
+        	}
+        	local Debug = ConstructDebug(DebugID, DebugInfo)
+
+        	return ConstructError(ErrorReason, ErrorMessage, Debug)
+		end
 	else
-		setclipboard(ConstructRawPacket(owner.Name, Message))
+		setclipboard(ConstructRawPacket(game.Players.LocalPlayer.Name, Message))
 		local ErrorReason = "NO_NET_LIB"
-        local ErrorMessage = "Your executor lacks the necessary networking to send chat messages or a net library wasn't found! You can manually set the networking library using setnetlib. Raw packet copied to clipboard."
+        local ErrorMessage = "Networking library not found! You can manually set the networking library using SetNetLibrary. Attempted to copy raw packet to clipboard."
         local DebugID = "SendChatPacket"
         local DebugInfo = {
             ["NetworkLib"] = NetworkLib,
@@ -265,12 +288,32 @@ end
 
 local function LSetNetLibrary(Library: table)
 	if typeof(Library) == "table" then
-		NetworkLib = Library
 		if rawget(Library, "send") and rawget(Library, "create") then
+			NetworkLib = Library
 			return ConstructResponse("NetLibrarySet", "Library successfully linked and send/create functions located!")
 		else
-			return ConstructResponse("InsufficientNetLibrarySet", "Library successfully linked but either send or create is missing. Make sure the library follows Astra's networking convention (or request support for a specific executor)!")
+			local ErrorReason = "INSUFFICIENT_NET_LIBRARY"
+			local ErrorMessage = "Library doesn't have either send or create, both are essential for ChatLibrary's function."
+			local DebugID = "SetNetLibrary"
+			local DebugContent = {
+				["ProvidedLibrary"] = Library,
+				["CurrentLibrary"] = NetworkLib
+			}
+			local Debug = ConstructDebug(DebugID, DebugContent)
+
+			return ConstructError(ErrorReason, ErrorMessage, Debug)
 		end
+	else
+		local ErrorReason = "INVALID_TYPE"
+		local ErrorMessage = "Library provided isn't a table!"
+		local DebugID = "SetNetLibrary"
+		local DebugContent = {
+			["ProvidedLibrary"] = Library,
+			["CurrentLibrary"] = NetworkLib
+		}
+		local Debug = ConstructDebug(DebugID, DebugContent)
+
+		return ConstructError(ErrorReason, ErrorMessage, Debug)
 	end
 end
 
@@ -290,6 +333,4 @@ local Lib = {
 
 table.freeze(Lib)
 
-getgenv().ChatLibrary = Lib
-
-return Lib -- All of that just for 12 lines of code...
+return Lib -- All of that just for 11 lines of code... even less than before
